@@ -6,8 +6,11 @@ from torch.utils.data import DataLoader
 
 from monai.networks.nets import varautoencoder
 from torchvision.datasets import CelebA, MNIST
-
+from torch.utils.data import Dataset, DataLoader
+import PIL
 from torchvision.transforms import ToTensor
+import glob 
+from matplotlib import pyplot as plt
 
 class vae_encoder(nn.Module):
     def __init__(self, input_shape, latent_dim) -> None:
@@ -16,7 +19,7 @@ class vae_encoder(nn.Module):
         self.num_layers = 4
         self.start_num_filters = 8
         self.conv_list = []
-        prev_in_channels = 1
+        prev_in_channels = 3
         for i in range(self.num_layers):
             num_filters = self.start_num_filters * (2**i)
             conv_layer = nn.Conv2d(in_channels=prev_in_channels, out_channels=num_filters, kernel_size=3, stride=1)
@@ -130,31 +133,51 @@ def vae_loss_function(x, xhat, mu, sigma):
     kl_loss = kl_divergence_loss(mu, sigma)
     return mse + kl_loss
 
+class CelebADataset(Dataset):
+    def __init__(self, img_files) -> None:
+        self.img_files = img_files 
+    def __getitem__(self, index):
+        img_file = self.img_files[index]
+        img = PIL.Image.open(img_file)
+        # resize the image to 128x128
+        img = img.resize((128, 128))
+        img = ToTensor()(img)
+        return img
+    def __len__(self):
+        return len(self.img_files)
+    
 
+img_dir = "/Users/asjog/VAE-research/data/celeba/celeba/img_align_celeba/"
+celeba_img_files = sorted(glob.glob(img_dir + "*.jpg"))
 
-enc = vae_encoder(input_shape=(1, 128, 128), latent_dim=64)
-inp = torch.randn((5, 1, 128, 128))
-z, mz, sigmaz = enc(inp)
-dec = vae_decoder(latent_dim=64, output_shape=(1, 128, 128))
-rec = dec(z)
-print(rec.shape)
-loss = vae_loss_function(inp, rec, mz, sigmaz)
-print(loss)
+celeba_dataset = CelebADataset(celeba_img_files)
 
-# get celeba dataset from torchvision
+# define a dataloader for celeba dataset
+celeba_dataloader = DataLoader(celeba_dataset, batch_size=8, shuffle=True)
+# plot a single batch of images with plt imshow
+for batch in celeba_dataloader:
+    print(batch.shape)
+    # plot all images of the batch in a subplots 
+    fig, ax = plt.subplots(1, 8)
+    for i in range(8):
+        ax[i].imshow(batch[i].permute(1, 2, 0))
 
-celeba_dataset = CelebA(root='/Users/asjog/VAE-research/data/celeba', download=True, transform=ToTensor())
-# mnist_dataset = MNIST(root='/Users/asjog/VAE-research/data/mnist', download=True)
-
-# make dataloaders
-celeba_dataloader = DataLoader(celeba_dataset, batch_size=1, shuffle=True)
-# mnist_dataloader = DataLoader(mnist_dataset, batch_size=1, shuffle=True)
-
-# get a batch of data
-for i, data in enumerate(celeba_dataloader):
-    print(data[0].shape)
+    plt.show()
     break
 
 
+enc = vae_encoder((3, 128, 128), 4096)
+dec = vae_decoder(4096, (3, 128, 128))
 
-# z = torch.distributions.MultivariateNormal(loc=out[0], scale=out[1])
+batch_z, batch_mu, batch_logsima = enc(batch)
+recon = dec(batch_mu)
+
+
+print(recon.shape)
+fig, ax = plt.subplots(1, 8)
+for i in range(8):
+    ax[i].imshow(recon[i].permute(1, 2, 0).detach().numpy())
+
+plt.show()
+
+
